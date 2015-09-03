@@ -62,6 +62,7 @@ func main() {
 		go httpRequest(lines, stats, ef, mutex)
 	}
 
+	// keep displaying stats until processing all specified URLs
 	start := time.Now()
 	for int(stats.doneRequests) < len(lines) {
 		end := time.Now()
@@ -94,6 +95,7 @@ func httpRequest(lines []string, stats *HttpStats, errorFile *os.File, mutex *sy
 		req, _ := http.NewRequest(items[0], items[1], body)
 		client := new(http.Client)
 
+		// measure turn around time in each request
 		start := time.Now()
 		resp, err := client.Do(req)
 		end := time.Now()
