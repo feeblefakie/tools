@@ -10,9 +10,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
+)
+
+var (
+	file        = flag.String("file", "", "a file which has list of URLs to be accessed")
+	tmpfile     = "/tmp/" + strconv.FormatInt(int64(os.Getpid()), 10) + ".err"
+	efile       = flag.String("error_to", tmpfile, "a file for error messages")
+	concurrency = flag.Int("concurrency", 1, "concurrency")
 )
 
 type HttpStats struct {
@@ -22,11 +27,15 @@ type HttpStats struct {
 	accumLatencies int64
 }
 
+type controls struct {
+	request   chan string
+	latency   chan int64
+	succeeded chan struct{}
+	failed    chan error
+	done      chan struct{}
+}
+
 func main() {
-	file := flag.String("file", "", "a file which has list of URLs to be accessed")
-	tmpfile := "/tmp/" + strconv.FormatInt(int64(os.Getpid()), 10) + ".err"
-	efile := flag.String("error_to", tmpfile, "a file for error messages")
-	concurrency := flag.Int("concurrency", 1, "concurrency")
 	flag.Parse()
 
 	if *file == "" {
@@ -48,42 +57,107 @@ func main() {
 	}
 	defer ef.Close()
 
-	scanner := bufio.NewScanner(f)
-	var lines []string
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	stats := &HttpStats{}
 
-	mutex := new(sync.Mutex)
-	for i := 0; i < *concurrency; i++ {
-		go httpRequest(lines, stats, ef, mutex)
+	control := &controls{
+		request:   make(chan string),
+		latency:   make(chan int64),
+		succeeded: make(chan struct{}),
+		failed:    make(chan error),
+		done:      make(chan struct{}),
 	}
 
-	// keep displaying stats until processing all specified URLs
-	start := time.Now()
-	for int(stats.doneRequests) < len(lines) {
-		end := time.Now()
-		interval := int64(end.Sub(start).Seconds())
-		if interval != 0 {
-			printStats(stats, interval)
+	requestCnt := make(chan int)
+
+	// concurrently read a file with a channel
+	go func() {
+		scanner := bufio.NewScanner(f)
+		cnt := 0
+		for scanner.Scan() {
+			control.request <- scanner.Text()
+			cnt++
 		}
-		time.Sleep(time.Millisecond * 100)
-	}
-	end := time.Now()
-	interval := int64(end.Sub(start).Seconds())
-	printStats(stats, interval)
-}
+		// closes all workers on their next iteration -- no more lines
+		close(control.request)
+		// report to the main loop how many requests we did
+		requestCnt <- cnt
+	}()
 
-func httpRequest(lines []string, stats *HttpStats, errorFile *os.File, mutex *sync.Mutex) {
+	for i := 0; i < *concurrency; i++ {
+		go httpRequest(control)
+	}
+
+	stats := &HttpStats{}
+	start := time.Now()
+	requests := 0
+	hadError := false
+
+	// ticks once per sec -- more efficient than sleep (doesnt hold the cpu)
+	tick := time.NewTicker(1 * time.Second)
+	defer tick.Stop()
+
+	// main loop
 	for {
-		offset := atomic.AddInt64(&stats.doneRequests, 1)
-		if int(offset) > len(lines) {
+		select {
+		case <-tick.C:
+			if stats.doneRequests > 0 {
+				interval := int64(time.Now().Sub(start).Nanoseconds())
+				printStats(stats, interval)
+			}
+		case latency := <-control.latency:
+			stats.accumLatencies += latency
+		case <-control.succeeded:
+			stats.doneRequests++
+			stats.numSucceeded++
+		case err := <-control.failed:
+			stats.doneRequests++
+			stats.numFailed++
+			ef.WriteString(err.Error() + "\n")
+			hadError = true
+		case requests = <-requestCnt:
+			// now we know -- now we can wait for all the success or failures
+		}
+		if requests > 0 && stats.doneRequests == int64(requests) {
 			break
 		}
-		line := lines[offset-1]
+	}
+
+	// print one last time
+	interval := int64(time.Now().Sub(start).Nanoseconds())
+	printStats(stats, interval)
+	fmt.Println()
+
+	// wait for everyone to check in
+	for *concurrency > 0 {
+		<-control.done
+		*concurrency--
+	}
+
+	if hadError {
+		fmt.Println("errors written to:", tmpfile)
+	} else {
+		os.Remove(tmpfile)
+	}
+}
+
+func httpRequest(control *controls) {
+	defer func() {
+		// signal for shutdown procedure
+		control.done <- struct{}{}
+	}()
+
+	var (
+		line   string
+		client = new(http.Client)
+		ok     bool
+	)
+
+	for {
+		line, ok = <-control.request
+		if !ok {
+			// no more requests -- channel closed
+			return
+		}
 
 		// format: [Method URL BodyParameters(for POST)]
 		items := strings.Split(line, " ")
@@ -93,28 +167,27 @@ func httpRequest(lines []string, stats *HttpStats, errorFile *os.File, mutex *sy
 		}
 
 		req, _ := http.NewRequest(items[0], items[1], body)
-		client := new(http.Client)
+		req.Close = true
 
 		// measure turn around time in each request
 		start := time.Now()
 		resp, err := client.Do(req)
-		end := time.Now()
+		control.latency <- int64(time.Now().Sub(start).Nanoseconds())
 
-		interval := int64(end.Sub(start).Nanoseconds())
-		atomic.AddInt64(&stats.accumLatencies, interval)
 		if err != nil {
-			atomic.AddInt64(&stats.numFailed, 1)
-			mutex.Lock()
-			errorFile.WriteString(err.Error() + "\n")
-			mutex.Unlock()
-		} else {
-			atomic.AddInt64(&stats.numSucceeded, 1)
+			control.failed <- err
+			continue
 		}
+
+		control.succeeded <- struct{}{}
 		resp.Body.Close()
 	}
 }
 
 func printStats(stats *HttpStats, interval int64) {
-	fmt.Printf("ok: %6d,  errors: %6d,  reqs/s: %6d,  aveLat(ms): %6d \r",
-		stats.numSucceeded, stats.numFailed, stats.numSucceeded/interval, stats.accumLatencies/interval/1000000)
+	fmt.Printf("ok: %6d,  errors: %6d,  reqs/s: %6d,  aveLat(ms): %6d\r",
+		stats.numSucceeded,
+		stats.numFailed,
+		(stats.numSucceeded*1000000000)/interval,
+		stats.accumLatencies/stats.numSucceeded/1000000)
 }
