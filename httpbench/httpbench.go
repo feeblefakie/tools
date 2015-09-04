@@ -20,7 +20,7 @@ var (
 	concurrency = flag.Int("concurrency", 1, "concurrency")
 )
 
-type HttpStats struct {
+type httpStats struct {
 	doneRequests   int64
 	numSucceeded   int64
 	numFailed      int64
@@ -87,7 +87,7 @@ func main() {
 		go httpRequest(control)
 	}
 
-	stats := &HttpStats{}
+	stats := &httpStats{}
 	start := time.Now()
 	requests := int64(0)
 	hadError := false
@@ -184,7 +184,7 @@ func httpRequest(control *controls) {
 	}
 }
 
-func printStats(stats *HttpStats, interval int64) {
+func printStats(stats *httpStats, interval int64) {
 	fmt.Printf("ok: %6d,  errors: %6d,  reqs/s: %6d,  aveLat(ms): %6d\r",
 		stats.numSucceeded,
 		stats.numFailed,
