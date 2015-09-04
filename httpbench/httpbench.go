@@ -64,7 +64,7 @@ func main() {
 		latency:   make(chan int64),
 		succeeded: make(chan struct{}),
 		failed:    make(chan error),
-		done:      make(chan struct{}, *concurrency),
+		done:      make(chan struct{}),
 	}
 
 	requestCnt := make(chan int)
