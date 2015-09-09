@@ -8,10 +8,10 @@ HttpBench is a light-weight and easy-to-use HTTP benchmark tool by golang.
 
 For GET:
 ```
-GET http://{url}:{port}/ 
-GET http://{url}:{port}/ 
-GET http://{url}:{port}/ 
-GET http://{url}:{port}/ 
+GET http://{url}:{port}/?{URL_encoded_parameters}
+GET http://{url}:{port}/?{URL_encoded_parameters}
+GET http://{url}:{port}/?{URL_encoded_parameters} 
+GET http://{url}:{port}/?{URL_encoded_parameters} 
 ...
 ```
 
