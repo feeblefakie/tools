@@ -20,7 +20,7 @@ var (
 	concurrency = flag.Int("concurrency", 1, "concurrency")
 )
 
-type HttpStats struct {
+type httpStats struct {
 	doneRequests   int64
 	numSucceeded   int64
 	numFailed      int64
@@ -67,12 +67,12 @@ func main() {
 		done:      make(chan struct{}),
 	}
 
-	requestCnt := make(chan int)
+	requestCnt := make(chan int64)
 
 	// concurrently read a file with a channel
 	go func() {
 		scanner := bufio.NewScanner(f)
-		cnt := 0
+		cnt := int64(0)
 		for scanner.Scan() {
 			control.request <- scanner.Text()
 			cnt++
@@ -87,9 +87,9 @@ func main() {
 		go httpRequest(control)
 	}
 
-	stats := &HttpStats{}
+	stats := &httpStats{}
 	start := time.Now()
-	requests := 0
+	requests := int64(0)
 	hadError := false
 
 	// ticks once per sec -- more efficient than sleep (doesnt hold the cpu)
@@ -101,7 +101,7 @@ func main() {
 		select {
 		case <-tick.C:
 			if stats.doneRequests > 0 {
-				interval := int64(time.Now().Sub(start).Nanoseconds())
+				interval := time.Now().Sub(start).Nanoseconds()
 				printStats(stats, interval)
 			}
 		case latency := <-control.latency:
@@ -117,13 +117,13 @@ func main() {
 		case requests = <-requestCnt:
 			// now we know -- now we can wait for all the success or failures
 		}
-		if requests > 0 && stats.doneRequests == int64(requests) {
+		if requests > 0 && stats.doneRequests == requests {
 			break
 		}
 	}
 
 	// print one last time
-	interval := int64(time.Now().Sub(start).Nanoseconds())
+	interval := time.Now().Sub(start).Nanoseconds()
 	printStats(stats, interval)
 	fmt.Println()
 
@@ -172,7 +172,7 @@ func httpRequest(control *controls) {
 		// measure turn around time in each request
 		start := time.Now()
 		resp, err := client.Do(req)
-		control.latency <- int64(time.Now().Sub(start).Nanoseconds())
+		control.latency <- time.Now().Sub(start).Nanoseconds()
 
 		if err != nil {
 			control.failed <- err
@@ -184,7 +184,7 @@ func httpRequest(control *controls) {
 	}
 }
 
-func printStats(stats *HttpStats, interval int64) {
+func printStats(stats *httpStats, interval int64) {
 	fmt.Printf("ok: %6d,  errors: %6d,  reqs/s: %6d,  aveLat(ms): %6d\r",
 		stats.numSucceeded,
 		stats.numFailed,
