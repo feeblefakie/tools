@@ -5,7 +5,6 @@
 ```
 $ sudo yum install fio
 ```
-
 * Figure out device file or filesystem's file to measure
 * Adjust the scheduler
 ```
