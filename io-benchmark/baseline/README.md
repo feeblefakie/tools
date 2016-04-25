@@ -8,12 +8,12 @@ $ sudo yum install fio
 * Figure out device file or filesystem's file to measure
 * Adjust the scheduler
 ```
-$ cat /sys/block/???/queue/scheduler
+$ cat /sys/block/[DEVICE]/queue/scheduler
 ```
 
 * set noop or cfq or deadline
 ```
-$ echo "noop" > /sys/block/???/queue/scheduler
+$ echo "noop" > /sys/block/[DEVICE]/queue/scheduler
 ```
 
 ###Mesure read IOPS 
