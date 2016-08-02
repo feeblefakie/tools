@@ -247,6 +247,7 @@ func (t *t3) MakeRecord(offset int64) error {
 }
 
 func main() {
+	// TODO: use flag
 	var sf int64 = 1
 	var numChunks int64 = 10
 	//var steps []int = nil
@@ -254,7 +255,7 @@ func main() {
 	var beta int64 = 10
 	var parallelism int64 = 2
 	dir := "./data"
-	texts, err := readRandomTexts("./random.txt")
+	texts, err := readTexts("./random.txt")
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -262,13 +263,11 @@ func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	// TODO: use flag
-
 	var i int64
 	var j int64
-	for i = 0; i <= numChunks; i++ {
+	for i = 0; i < numChunks; i++ {
 		var wg sync.WaitGroup
-		for j = i; j < i+parallelism && j <= numChunks; j++ {
+		for j = i; j < i+parallelism && j < numChunks; j++ {
 			wg.Add(1)
 			fmt.Printf("processing chunk %d\n", j)
 			config := &ChunkConfig{
@@ -287,7 +286,7 @@ func main() {
 			}(config)
 		}
 		wg.Wait()
-		i += j - 1
+		i = j - 1
 	}
 }
 
@@ -320,7 +319,7 @@ func genChunk(config *ChunkConfig) error {
 	return nil
 }
 
-func readRandomTexts(filename string) ([]string, error) {
+func readTexts(filename string) ([]string, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
