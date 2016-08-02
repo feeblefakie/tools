@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"runtime"
 	"sync"
 )
 
@@ -258,6 +259,8 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// TODO: use flag
 
