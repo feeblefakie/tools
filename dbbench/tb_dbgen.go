@@ -2,10 +2,15 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
 	"sync"
+)
+
+var (
+	ErrInvalidTableType = errors.New("tokyo benchmark: invalid table type")
 )
 
 type UniformRandom struct {
@@ -52,75 +57,115 @@ type T3Columns struct {
 	c5 string
 }
 
-type T1 struct {
+type table struct {
 	name   string
 	buffer []string
 	file   *os.File
 	gens   []NumberGenerator
 	card   int64
-	config *Config
+	config *ChunkConfig
 }
 
-type T2 struct {
-	name   string
-	buffer []string
-	file   *os.File
-	gens   []NumberGenerator
-	card   int64
-	config *Config
+type t1 struct {
+	*table
 }
 
-type T3 struct {
-	name   string
-	buffer []string
-	file   *os.File
-	gens   []NumberGenerator
-	card   int64
-	config *Config
+type t2 struct {
+	*table
 }
 
-type Config struct {
-	sf          int64
-	alpha       int64
-	beta        int64
-	seed        int64
-	numChunks   int64
-	baseDir     string
-	randomTexts []string
+type t3 struct {
+	*table
+}
+
+type ChunkConfig struct {
+	id    int64
+	total int64
+	sf    int64
+	alpha int64
+	beta  int64
+	seed  int64
+	dir   string
+	texts []string
 }
 
 type TableGenerator interface {
-	OpenFile(suffix string) error
+	OpenFile() error
 	CloseFile() error
-	MakeRecord(offset int64, step uint32) error
 	Flush() error
 	GetCardinality() int64
+	MakeRecord(offset int64) error
 }
 
-func T1New(name string, config *Config) (*T1, error) {
-	r := rand.New(rand.NewSource(config.seed))
-	card := config.sf * 10000000 / config.alpha
-	gens := []NumberGenerator{
-		nil,
-		nil, // TODO for parete
-		&UniformRandom{r: r, min: 1, max: card},
-		&UniformRandom{r: r, min: 1, max: card},
-		&UniformRandom{r: r, min: 0, max: 99},
-	}
+type TableType int
 
-	t := &T1{
-		name:   name,
-		buffer: make([]string, 10000),
-		gens:   gens,
-		card:   card,
+const (
+	T1 = iota
+	T2
+	T3
+)
+
+func NewTable(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
+
+	r := rand.New(rand.NewSource(config.seed))
+	buffer := make([]string, 10000)
+
+	t := &table{
+		buffer: buffer,
 		config: config,
 	}
 
-	return t, nil
+	switch tableType {
+	case T1:
+		card := config.sf * 10000000 / config.alpha
+		gens := []NumberGenerator{
+			nil,
+			nil, // TODO for parete
+			&UniformRandom{r: r, min: 1, max: card},
+			&UniformRandom{r: r, min: 1, max: card},
+			&UniformRandom{r: r, min: 0, max: 99},
+		}
+		t.name = "T1"
+		t.gens = gens
+		t.card = card
+		return &t1{t}, nil
+
+	case T2:
+		card := config.sf * 10000000 / config.alpha
+		gens := []NumberGenerator{
+			nil,
+			&UniformRandom{r: r, min: 1, max: card / config.beta},
+			&UniformRandom{r: r, min: 1, max: card},
+			&UniformRandom{r: r, min: 1, max: card},
+			&UniformRandom{r: r, min: 0, max: 99},
+		}
+		t.name = "T2"
+		t.gens = gens
+		t.card = card
+		return &t2{t}, nil
+
+	case T3:
+		card := config.sf * 10000000 / (config.alpha * config.beta)
+		gens := []NumberGenerator{
+			nil,
+			&UniformRandom{r: r, min: 1, max: card},
+			&UniformRandom{r: r, min: 1, max: card},
+			&UniformRandom{r: r, min: 1, max: card},
+			&UniformRandom{r: r, min: 0, max: 99},
+		}
+		t.name = "T3"
+		t.gens = gens
+		t.card = card
+		return &t3{t}, nil
+
+	default:
+		return nil, ErrInvalidTableType
+	}
+
 }
 
-func (t *T1) OpenFile(suffix string) error {
-	filename := t.config.baseDir + "/" + t.name + "-" + suffix
+func (t *table) OpenFile() error {
+	filename := fmt.Sprintf("%s/%s-%d", t.config.dir, t.name, t.config.id)
 	fmt.Println(filename)
 	f, err := os.Create(filename)
 	if err != nil {
@@ -130,11 +175,26 @@ func (t *T1) OpenFile(suffix string) error {
 	return nil
 }
 
-func (t *T1) CloseFile() error {
+func (t *table) CloseFile() error {
 	return t.file.Close()
 }
 
-func (t *T1) MakeRecord(offset int64, step uint32) error {
+func (t *table) Flush() error {
+	for _, record := range t.buffer {
+		t.file.WriteString(record)
+	}
+	return nil
+}
+
+func (t *table) GetCardinality() int64 {
+	return t.card
+}
+
+func (t *table) MakeRecord(offset int64) error {
+	panic("please override this method")
+}
+
+func (t *t1) MakeRecord(offset int64) error {
 	var i int32
 	for i = 0; i < int32(t.config.alpha); i++ {
 		c := &T1Columns{}
@@ -142,7 +202,7 @@ func (t *T1) MakeRecord(offset int64, step uint32) error {
 		c.c2 = i
 		c.c3 = t.gens[2].GetInt64()
 		c.c4 = t.gens[3].GetInt64()
-		c.c5 = t.config.randomTexts[t.gens[4].GetInt64()]
+		c.c5 = t.config.texts[t.gens[4].GetInt64()]
 
 		record := fmt.Sprintf("%d,%d,%d,%d,%s\n", c.c1, c.c2, c.c3, c.c4, c.c5)
 		t.buffer = append(t.buffer, record)
@@ -153,61 +213,13 @@ func (t *T1) MakeRecord(offset int64, step uint32) error {
 	return nil
 }
 
-func (t *T1) Flush() error {
-	for _, record := range t.buffer {
-		t.file.WriteString(record)
-	}
-	return nil
-}
-
-func (t *T1) GetCardinality() int64 {
-	return t.card
-}
-
-func T2New(name string, config *Config) (*T2, error) {
-	r := rand.New(rand.NewSource(config.seed))
-	card := config.sf * 10000000 / config.alpha
-	gens := []NumberGenerator{
-		nil,
-		&UniformRandom{r: r, min: 1, max: card / config.beta},
-		&UniformRandom{r: r, min: 1, max: card},
-		&UniformRandom{r: r, min: 1, max: card},
-		&UniformRandom{r: r, min: 0, max: 99},
-	}
-
-	t := &T2{
-		name:   name,
-		buffer: make([]string, 10000),
-		gens:   gens,
-		card:   card,
-		config: config,
-	}
-
-	return t, nil
-}
-
-func (t *T2) OpenFile(suffix string) error {
-	filename := t.config.baseDir + "/" + t.name + "-" + suffix
-	fmt.Println(filename)
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	t.file = f
-	return nil
-}
-
-func (t *T2) CloseFile() error {
-	return t.file.Close()
-}
-
-func (t *T2) MakeRecord(offset int64, step uint32) error {
+func (t *t2) MakeRecord(offset int64) error {
 	c := &T2Columns{}
 	c.c1 = offset
 	c.c2 = t.gens[1].GetInt64()
 	c.c3 = t.gens[2].GetInt64()
 	c.c4 = t.gens[3].GetInt64()
-	c.c5 = t.config.randomTexts[t.gens[4].GetInt64()]
+	c.c5 = t.config.texts[t.gens[4].GetInt64()]
 
 	record := fmt.Sprintf("%d,%d,%d,%d,%s\n", c.c1, c.c2, c.c3, c.c4, c.c5)
 	t.buffer = append(t.buffer, record)
@@ -217,61 +229,13 @@ func (t *T2) MakeRecord(offset int64, step uint32) error {
 	return nil
 }
 
-func (t *T2) Flush() error {
-	for _, record := range t.buffer {
-		t.file.WriteString(record)
-	}
-	return nil
-}
-
-func (t *T2) GetCardinality() int64 {
-	return t.card
-}
-
-func T3New(name string, config *Config) (*T3, error) {
-	r := rand.New(rand.NewSource(config.seed))
-	card := config.sf * 10000000 / (config.alpha * config.beta)
-	gens := []NumberGenerator{
-		nil,
-		&UniformRandom{r: r, min: 1, max: card},
-		&UniformRandom{r: r, min: 1, max: card},
-		&UniformRandom{r: r, min: 1, max: card},
-		&UniformRandom{r: r, min: 0, max: 99},
-	}
-
-	t := &T3{
-		name:   name,
-		buffer: make([]string, 10000),
-		gens:   gens,
-		card:   card,
-		config: config,
-	}
-
-	return t, nil
-}
-
-func (t *T3) OpenFile(suffix string) error {
-	filename := t.config.baseDir + "/" + t.name + "-" + suffix
-	fmt.Println(filename)
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	t.file = f
-	return nil
-}
-
-func (t *T3) CloseFile() error {
-	return t.file.Close()
-}
-
-func (t *T3) MakeRecord(offset int64, step uint32) error {
+func (t *t3) MakeRecord(offset int64) error {
 	c := &T3Columns{}
 	c.c1 = offset
 	c.c2 = t.gens[1].GetInt64()
 	c.c3 = t.gens[2].GetInt64()
 	c.c4 = t.gens[3].GetInt64()
-	c.c5 = t.config.randomTexts[t.gens[4].GetInt64()]
+	c.c5 = t.config.texts[t.gens[4].GetInt64()]
 
 	record := fmt.Sprintf("%d,%d,%d,%d,%s\n", c.c1, c.c2, c.c3, c.c4, c.c5)
 	t.buffer = append(t.buffer, record)
@@ -279,17 +243,6 @@ func (t *T3) MakeRecord(offset int64, step uint32) error {
 		t.Flush()
 	}
 	return nil
-}
-
-func (t *T3) Flush() error {
-	for _, record := range t.buffer {
-		t.file.WriteString(record)
-	}
-	return nil
-}
-
-func (t *T3) GetCardinality() int64 {
-	return t.card
 }
 
 func main() {
@@ -298,15 +251,15 @@ func main() {
 	//var steps []int = nil
 	var alpha int64 = 10
 	var beta int64 = 10
-	var parallelism int64 = 5
-	baseDir := "./data"
-	randomTexts, err := readRandomTexts("./random.txt")
+	var parallelism int64 = 2
+	dir := "./data"
+	texts, err := readRandomTexts("./random.txt")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	// TODO: flag
+	// TODO: use flag
 
 	var i int64
 	var j int64
@@ -315,50 +268,33 @@ func main() {
 		for j = i; j < i+parallelism && j <= numChunks; j++ {
 			wg.Add(1)
 			fmt.Printf("processing chunk %d\n", j)
-			config := &Config{
-				alpha:       alpha,
-				beta:        beta,
-				sf:          sf,
-				seed:        i,
-				baseDir:     baseDir,
-				numChunks:   numChunks,
-				randomTexts: randomTexts,
+			config := &ChunkConfig{
+				id:    j,
+				total: numChunks,
+				alpha: alpha,
+				beta:  beta,
+				sf:    sf,
+				seed:  j,
+				dir:   dir,
+				texts: texts,
 			}
-			go func(config *Config, chunkId int64) {
-				genChunk(config, chunkId)
+			go func(config *ChunkConfig) {
+				genChunk(config)
 				wg.Done()
-			}(config, j)
+			}(config)
 		}
 		wg.Wait()
 		i += j - 1
 	}
 }
 
-func genChunk(config *Config, chunkId int64) error {
-	t1, err := T1New("t1", config)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	t2, err := T2New("t2", config)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	t3, err := T3New("t3", config)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	tables := []TableGenerator{
-		t1,
-		t2,
-		t3,
-	}
+func genChunk(config *ChunkConfig) error {
+	tableTypes := []TableType{T1, T2, T3}
 
-	for _, table := range tables {
-		suffix := fmt.Sprintf("%d", chunkId)
-		err = table.OpenFile(suffix)
+	for _, tableType := range tableTypes {
+		table, err := NewTable(tableType, config)
+
+		err = table.OpenFile()
 		if err != nil {
 			fmt.Println(err)
 			return err
@@ -367,13 +303,13 @@ func genChunk(config *Config, chunkId int64) error {
 
 		cardinality := table.GetCardinality()
 		var (
-			start int64 = cardinality / config.numChunks * chunkId
-			end   int64 = cardinality / config.numChunks * (chunkId + 1)
+			start int64 = cardinality / config.total * config.id
+			end   int64 = cardinality / config.total * (config.id + 1)
 		)
 
 		var i int64
 		for i = start; i <= end; i++ {
-			table.MakeRecord(i, 0)
+			table.MakeRecord(i)
 		}
 		table.Flush()
 	}
