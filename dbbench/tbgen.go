@@ -2,44 +2,77 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 )
 
+var (
+	sf          = flag.Int64("sf", 1, "scale factor")
+	c           = flag.Int64("c", 1, "the number of chunks")
+	s           = flag.String("s", "", "steps(chunk number) to generate. ex. 1,2,3. unspecified for all steps")
+	alpha       = flag.Int64("alpha", 4, "alpha value")
+	beta        = flag.Int64("beta", 10, "beta value")
+	parallelism = flag.Int64("p", 1, "parallelism")
+	dir         = flag.String("o", "./data", "ouput file directory.")
+	textDir     = flag.String("t", "./", "text file directory")
+)
+
 func main() {
-	// TODO: use flag
-	var sf int64 = 1
-	var numChunks int64 = 10
-	//var steps []int = nil
-	var alpha int64 = 10
-	var beta int64 = 10
-	var parallelism int64 = 2
-	dir := "./data"
-	texts, err := readTexts("./random.txt")
+	flag.Parse()
+
+	texts, err := readTexts(*textDir + "/random.txt")
 	if err != nil {
 		fmt.Println(err)
 		return
+	}
+
+	var steps []int64
+	for _, step := range strings.Split(*s, ",") {
+		stepi, err := strconv.ParseInt(step, 10, 64)
+		if err != nil {
+			continue
+		}
+		steps = append(steps, stepi)
 	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	var i int64
 	var j int64
-	for i = 0; i < numChunks; i++ {
+	passed := int64(0)
+	for i = 0; i < *c; i++ {
 		var wg sync.WaitGroup
-		for j = i; j < i+parallelism && j < numChunks; j++ {
-			wg.Add(1)
+		for j = i; j < i+*parallelism+passed && j < *c; j++ {
+			// process only specified steps
+			if len(*s) > 0 {
+				pass := true
+				for k := 0; k < len(steps); k++ {
+					if j == steps[k] {
+						pass = false
+						break
+					}
+				}
+				if pass {
+					passed++
+					continue
+				}
+			}
+
 			fmt.Printf("generating chunk %d\n", j)
+			wg.Add(1)
 			config := &ChunkConfig{
 				id:    j,
-				total: numChunks,
-				alpha: alpha,
-				beta:  beta,
-				sf:    sf,
+				total: *c,
+				alpha: *alpha,
+				beta:  *beta,
+				sf:    *sf,
 				seed:  j,
-				dir:   dir,
+				dir:   *dir,
 				texts: texts,
 			}
 			go func(config *ChunkConfig) {
@@ -57,6 +90,10 @@ func genChunk(config *ChunkConfig) error {
 
 	for _, tableType := range tableTypes {
 		table, err := NewTable(tableType, config)
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
 
 		err = table.OpenFile()
 		if err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path"
 )
 
 var (
@@ -85,7 +86,7 @@ const (
 
 func NewTable(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
 	r := rand.New(rand.NewSource(config.seed))
-	buffer := make([]string, 10000)
+	buffer := make([]string, 100000)
 
 	t := &table{
 		buffer: buffer,
@@ -141,11 +142,18 @@ func NewTable(tableType TableType, config *ChunkConfig) (TableGenerator, error) 
 }
 
 func (t *table) OpenFile() error {
-	filename := fmt.Sprintf("%s/%s-%d", t.config.dir, t.name, t.config.id)
+	filename := fmt.Sprintf("%s/%d/%s-%d", t.config.dir, t.config.id, t.name, t.config.id)
+
+	err := os.MkdirAll(path.Dir(filename), 0777)
+	if err != nil {
+		return err
+	}
+
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
+
 	t.file = f
 	return nil
 }
@@ -165,6 +173,13 @@ func (t *table) GetCardinality() int64 {
 	return t.card
 }
 
+func (t *table) addToBuffer(record string) {
+	t.buffer = append(t.buffer, record)
+	if len(t.buffer) == cap(t.buffer) {
+		t.Flush()
+	}
+}
+
 func (t *table) MakeRecord(offset int64) error {
 	panic("this method must be overridden.")
 }
@@ -180,10 +195,7 @@ func (t *t1) MakeRecord(offset int64) error {
 		c.c5 = t.config.texts[t.gens[4].GetInt64()]
 
 		record := fmt.Sprintf("%d,%d,%d,%d,%s\n", c.c1, c.c2, c.c3, c.c4, c.c5)
-		t.buffer = append(t.buffer, record)
-		if len(t.buffer) == cap(t.buffer) {
-			t.Flush()
-		}
+		t.addToBuffer(record)
 	}
 	return nil
 }
@@ -197,10 +209,7 @@ func (t *t2) MakeRecord(offset int64) error {
 	c.c5 = t.config.texts[t.gens[4].GetInt64()]
 
 	record := fmt.Sprintf("%d,%d,%d,%d,%s\n", c.c1, c.c2, c.c3, c.c4, c.c5)
-	t.buffer = append(t.buffer, record)
-	if len(t.buffer) == cap(t.buffer) {
-		t.Flush()
-	}
+	t.addToBuffer(record)
 	return nil
 }
 
@@ -213,9 +222,6 @@ func (t *t3) MakeRecord(offset int64) error {
 	c.c5 = t.config.texts[t.gens[4].GetInt64()]
 
 	record := fmt.Sprintf("%d,%d,%d,%d,%s\n", c.c1, c.c2, c.c3, c.c4, c.c5)
-	t.buffer = append(t.buffer, record)
-	if len(t.buffer) == cap(t.buffer) {
-		t.Flush()
-	}
+	t.addToBuffer(record)
 	return nil
 }
