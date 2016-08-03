@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"./table"
 )
 
 var (
@@ -65,17 +67,17 @@ func main() {
 
 			fmt.Printf("generating chunk %d\n", j)
 			wg.Add(1)
-			config := &ChunkConfig{
-				id:    j,
-				total: *c,
-				alpha: *alpha,
-				beta:  *beta,
-				sf:    *sf,
-				seed:  j,
-				dir:   *dir,
-				texts: texts,
+			config := &table.ChunkConfig{
+				Id:    j,
+				Total: *c,
+				Alpha: *alpha,
+				Beta:  *beta,
+				Sf:    *sf,
+				Seed:  j,
+				Dir:   *dir,
+				Texts: texts,
 			}
-			go func(config *ChunkConfig) {
+			go func(config *table.ChunkConfig) {
 				genChunk(config)
 				wg.Done()
 			}(config)
@@ -85,11 +87,11 @@ func main() {
 	}
 }
 
-func genChunk(config *ChunkConfig) error {
-	tableTypes := []TableType{T1, T2, T3}
+func genChunk(config *table.ChunkConfig) error {
+	tableTypes := []table.TableType{table.T1, table.T2, table.T3}
 
 	for _, tableType := range tableTypes {
-		table, err := NewTable(tableType, config)
+		table, err := table.New(tableType, config)
 		if err != nil {
 			fmt.Println(err)
 			return err
@@ -104,8 +106,8 @@ func genChunk(config *ChunkConfig) error {
 
 		cardinality := table.GetCardinality()
 		var (
-			start int64 = cardinality / config.total * config.id
-			end   int64 = cardinality / config.total * (config.id + 1)
+			start int64 = cardinality / config.Total * config.Id
+			end   int64 = cardinality / config.Total * (config.Id + 1)
 		)
 
 		var i int64
