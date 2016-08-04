@@ -16,7 +16,8 @@ type TableGenerator interface {
 	OpenFile() error
 	CloseFile() error
 	Flush() error
-	GetCardinality() int64
+	GetStartKey() int64
+	GetEndKey() int64
 	MakeRecord(offset int64) error
 }
 
@@ -169,8 +170,12 @@ func (t *table) Flush() error {
 	return nil
 }
 
-func (t *table) GetCardinality() int64 {
-	return t.card
+func (t *table) GetStartKey() int64 {
+	return t.card / t.config.Total * t.config.Id
+}
+
+func (t *table) GetEndKey() int64 {
+	return t.card / t.config.Total * (t.config.Id + 1)
 }
 
 func (t *table) addToBuffer(record string) {

@@ -16,7 +16,7 @@ import (
 var (
 	sf          = flag.Int64("sf", 1, "scale factor")
 	c           = flag.Int64("c", 1, "the number of chunks")
-	s           = flag.String("s", "", "steps(chunk number) to generate. ex. 1,2,3. unspecified for all steps")
+	s           = flag.String("s", "", "steps(chunk numbers) to generate. ex. 0,2,3. unspecified for all steps")
 	alpha       = flag.Int64("alpha", 4, "alpha value")
 	beta        = flag.Int64("beta", 10, "beta value")
 	parallelism = flag.Int64("p", 1, "parallelism")
@@ -104,11 +104,10 @@ func genChunk(config *table.ChunkConfig) error {
 		}
 		defer table.CloseFile()
 
-		cardinality := table.GetCardinality()
-		var (
-			start int64 = cardinality / config.Total * config.Id
-			end   int64 = cardinality / config.Total * (config.Id + 1)
-		)
+		start := table.GetStartKey()
+		end := table.GetEndKey()
+		fmt.Printf("start: %d\n", start)
+		fmt.Printf("end: %d\n", end)
 
 		var i int64
 		for i = start; i <= end; i++ {
