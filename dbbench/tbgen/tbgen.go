@@ -106,8 +106,6 @@ func genChunk(config *table.ChunkConfig) error {
 
 		start := table.GetStartKey()
 		end := table.GetEndKey()
-		fmt.Printf("start: %d\n", start)
-		fmt.Printf("end: %d\n", end)
 
 		var i int64
 		for i = start; i <= end; i++ {
