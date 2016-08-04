@@ -167,6 +167,7 @@ func (t *table) Flush() error {
 	for _, record := range t.buffer {
 		t.file.WriteString(record)
 	}
+	t.buffer = nil
 	return nil
 }
 
