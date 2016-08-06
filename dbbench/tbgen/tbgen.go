@@ -19,7 +19,7 @@ var (
 	s           = flag.String("s", "", "steps(chunk numbers) to generate. ex. 0,2,3. unspecified for all steps")
 	alpha       = flag.Int64("alpha", 4, "alpha value")
 	beta        = flag.Int64("beta", 10, "beta value")
-	parallelism = flag.Int64("p", 1, "parallelism")
+	parallelism = flag.Int64("p", 1, "parallelism. actual max parallelism is min(c, p).")
 	dir         = flag.String("o", "./data", "ouput file directory.")
 	textDir     = flag.String("t", "./", "text file directory")
 )
