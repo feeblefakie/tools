@@ -176,7 +176,7 @@ func (t *table) GetStartKey() int64 {
 }
 
 func (t *table) GetEndKey() int64 {
-	return t.card / t.config.Total * (t.config.Id + 1)
+	return t.card/t.config.Total*(t.config.Id+1) - 1
 }
 
 func (t *table) addToBuffer(record string) {
