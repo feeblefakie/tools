@@ -13,9 +13,11 @@ import (
 	"./table"
 )
 
+const NumBlocks = 1024
+
 var (
 	sf          = flag.Int64("sf", 1, "scale factor")
-	c           = flag.Int64("c", 1, "the number of chunks")
+	c           = flag.Int64("c", 1, "the number of chunks (should be power of 2 and less than or equals to 1024)")
 	s           = flag.String("s", "", "steps(chunk numbers) to generate. ex. 0,2,3. unspecified for all steps")
 	alpha       = flag.Int64("alpha", 4, "alpha value")
 	beta        = flag.Int64("beta", 10, "beta value")
@@ -44,6 +46,15 @@ func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
+	// split blocks into chunks
+	blocksPerChunk := make([][]int64, *c)
+	var blockId int64
+	var chunkId int64
+	for blockId = 0; blockId < NumBlocks; blockId++ {
+		chunkId = blockId % *c
+		blocksPerChunk[chunkId] = append(blocksPerChunk[chunkId], blockId)
+	}
+
 	var i int64
 	var j int64
 	passed := int64(0)
@@ -68,14 +79,15 @@ func main() {
 			fmt.Printf("generating chunk %d\n", j)
 			wg.Add(1)
 			config := &table.ChunkConfig{
-				Id:    j,
-				Total: *c,
-				Alpha: *alpha,
-				Beta:  *beta,
-				Sf:    *sf,
-				Seed:  j,
-				Dir:   *dir,
-				Texts: texts,
+				Id:         j,
+				Total:      *c,
+				Alpha:      *alpha,
+				Beta:       *beta,
+				Sf:         *sf,
+				Dir:        *dir,
+				Texts:      texts,
+				BlockIds:   blocksPerChunk[j],
+				BlockTotal: NumBlocks,
 			}
 			go func(config *table.ChunkConfig) {
 				genChunk(config)
@@ -104,13 +116,7 @@ func genChunk(config *table.ChunkConfig) error {
 		}
 		defer table.CloseFile()
 
-		start := table.GetStartKey()
-		end := table.GetEndKey()
-
-		var i int64
-		for i = start; i <= end; i++ {
-			table.MakeRecord(i)
-		}
+		table.MakeBlocks()
 		table.Flush()
 	}
 

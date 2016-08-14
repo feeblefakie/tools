@@ -16,9 +16,8 @@ type TableGenerator interface {
 	OpenFile() error
 	CloseFile() error
 	Flush() error
-	GetStartKey() int64
-	GetEndKey() int64
-	MakeRecord(offset int64) error
+	MakeBlocks() error
+	makeRecord(key int64, blockIndex int) error
 }
 
 type t1Columns struct {
@@ -49,7 +48,7 @@ type table struct {
 	name   string
 	buffer []string
 	file   *os.File
-	gens   []NumberGenerator
+	gens   [][]NumberGenerator
 	card   int64
 	config *ChunkConfig
 }
@@ -66,15 +65,17 @@ type t3 struct {
 	*table
 }
 
+// a chunk consists of multiple consecutive blocks
 type ChunkConfig struct {
-	Id    int64
-	Total int64
-	Sf    int64
-	Alpha int64
-	Beta  int64
-	Seed  int64
-	Dir   string
-	Texts []string
+	Id         int64
+	Total      int64
+	Sf         int64
+	Alpha      int64
+	Beta       int64
+	Dir        string
+	Texts      []string
+	BlockIds   []int64
+	BlockTotal int64
 }
 
 type TableType int
@@ -86,7 +87,6 @@ const (
 )
 
 func New(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
-	r := rand.New(rand.NewSource(config.Seed))
 	buffer := make([]string, 100000)
 
 	t := &table{
@@ -97,43 +97,53 @@ func New(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
 	switch tableType {
 	case T1:
 		card := config.Sf * 10000000 / config.Alpha
-		gens := []NumberGenerator{
-			nil,
-			nil, // TODO for parete
-			&UniformRandom{r: r, min: 1, max: card},
-			&UniformRandom{r: r, min: 1, max: card},
-			&UniformRandom{r: r, min: 0, max: 99},
+		for _, blockId := range config.BlockIds {
+			// distinct seed per block
+			r := rand.New(rand.NewSource(blockId))
+			ngArray := []NumberGenerator{
+				nil,
+				nil, // TODO for parete
+				&UniformRandom{r: r, min: 1, max: card},
+				&UniformRandom{r: r, min: 1, max: card},
+				&UniformRandom{r: r, min: 0, max: 99},
+			}
+			t.gens = append(t.gens, ngArray)
 		}
 		t.name = "T1"
-		t.gens = gens
 		t.card = card
 		return &t1{t}, nil
 
 	case T2:
 		card := config.Sf * 10000000 / config.Alpha
-		gens := []NumberGenerator{
-			nil,
-			&UniformRandom{r: r, min: 1, max: card / config.Beta},
-			&UniformRandom{r: r, min: 1, max: card},
-			&UniformRandom{r: r, min: 1, max: card},
-			&UniformRandom{r: r, min: 0, max: 99},
+		for _, blockId := range config.BlockIds {
+			r := rand.New(rand.NewSource(blockId))
+			ngArray := []NumberGenerator{
+				nil,
+				&UniformRandom{r: r, min: 1, max: card / config.Beta},
+				&UniformRandom{r: r, min: 1, max: card},
+				&UniformRandom{r: r, min: 1, max: card},
+				&UniformRandom{r: r, min: 0, max: 99},
+			}
+			t.gens = append(t.gens, ngArray)
 		}
 		t.name = "T2"
-		t.gens = gens
 		t.card = card
 		return &t2{t}, nil
 
 	case T3:
 		card := config.Sf * 10000000 / (config.Alpha * config.Beta)
-		gens := []NumberGenerator{
-			nil,
-			&UniformRandom{r: r, min: 1, max: card},
-			&UniformRandom{r: r, min: 1, max: card},
-			&UniformRandom{r: r, min: 1, max: card},
-			&UniformRandom{r: r, min: 0, max: 99},
+		for _, blockId := range config.BlockIds {
+			r := rand.New(rand.NewSource(blockId))
+			ngArray := []NumberGenerator{
+				nil,
+				&UniformRandom{r: r, min: 1, max: card},
+				&UniformRandom{r: r, min: 1, max: card},
+				&UniformRandom{r: r, min: 1, max: card},
+				&UniformRandom{r: r, min: 0, max: 99},
+			}
+			t.gens = append(t.gens, ngArray)
 		}
 		t.name = "T3"
-		t.gens = gens
 		t.card = card
 		return &t3{t}, nil
 
@@ -171,34 +181,40 @@ func (t *table) Flush() error {
 	return nil
 }
 
-func (t *table) GetStartKey() int64 {
-	return t.card / t.config.Total * t.config.Id
-}
+func (t *table) makeBlocks(f func(int64, int) error) error {
+	for blockIndex, blockId := range t.config.BlockIds {
+		startKey := t.card / t.config.BlockTotal * blockId
+		endKey := t.card/t.config.BlockTotal*(blockId+1) - 1
 
-func (t *table) GetEndKey() int64 {
-	return t.card/t.config.Total*(t.config.Id+1) - 1
-}
-
-func (t *table) addToBuffer(record string) {
-	t.buffer = append(t.buffer, record)
-	if len(t.buffer) == cap(t.buffer) {
-		t.Flush()
+		for i := startKey; i <= endKey; i++ {
+			f(i, blockIndex)
+		}
 	}
+	return nil
 }
 
-func (t *table) MakeRecord(offset int64) error {
-	panic("this method must be overridden.")
+// NOTICE : a little redundant code from lack of (true) polymorphism in go
+func (t *t1) MakeBlocks() error {
+	return t.makeBlocks(t.makeRecord)
 }
 
-func (t *t1) MakeRecord(offset int64) error {
+func (t *t2) MakeBlocks() error {
+	return t.makeBlocks(t.makeRecord)
+}
+
+func (t *t3) MakeBlocks() error {
+	return t.makeBlocks(t.makeRecord)
+}
+
+func (t *t1) makeRecord(key int64, blockIndex int) error {
 	var i int32
 	for i = 0; i < int32(t.config.Alpha); i++ {
 		c := &t1Columns{}
-		c.c1 = offset
+		c.c1 = key
 		c.c2 = i
-		c.c3 = t.gens[2].GetInt64()
-		c.c4 = t.gens[3].GetInt64()
-		c.c5 = t.config.Texts[t.gens[4].GetInt64()]
+		c.c3 = t.gens[blockIndex][2].GetInt64()
+		c.c4 = t.gens[blockIndex][3].GetInt64()
+		c.c5 = t.config.Texts[t.gens[blockIndex][4].GetInt64()]
 
 		record := fmt.Sprintf("%d,%d,%d,%d,%s\n", c.c1, c.c2, c.c3, c.c4, c.c5)
 		t.addToBuffer(record)
@@ -206,28 +222,35 @@ func (t *t1) MakeRecord(offset int64) error {
 	return nil
 }
 
-func (t *t2) MakeRecord(offset int64) error {
+func (t *t2) makeRecord(key int64, blockIndex int) error {
 	c := &t2Columns{}
-	c.c1 = offset
-	c.c2 = t.gens[1].GetInt64()
-	c.c3 = t.gens[2].GetInt64()
-	c.c4 = t.gens[3].GetInt64()
-	c.c5 = t.config.Texts[t.gens[4].GetInt64()]
+	c.c1 = key
+	c.c2 = t.gens[blockIndex][1].GetInt64()
+	c.c3 = t.gens[blockIndex][2].GetInt64()
+	c.c4 = t.gens[blockIndex][3].GetInt64()
+	c.c5 = t.config.Texts[t.gens[blockIndex][4].GetInt64()]
 
 	record := fmt.Sprintf("%d,%d,%d,%d,%s\n", c.c1, c.c2, c.c3, c.c4, c.c5)
 	t.addToBuffer(record)
 	return nil
 }
 
-func (t *t3) MakeRecord(offset int64) error {
+func (t *t3) makeRecord(key int64, blockIndex int) error {
 	c := &t3Columns{}
-	c.c1 = offset
-	c.c2 = t.gens[1].GetInt64()
-	c.c3 = t.gens[2].GetInt64()
-	c.c4 = t.gens[3].GetInt64()
-	c.c5 = t.config.Texts[t.gens[4].GetInt64()]
+	c.c1 = key
+	c.c2 = t.gens[blockIndex][1].GetInt64()
+	c.c3 = t.gens[blockIndex][2].GetInt64()
+	c.c4 = t.gens[blockIndex][3].GetInt64()
+	c.c5 = t.config.Texts[t.gens[blockIndex][4].GetInt64()]
 
 	record := fmt.Sprintf("%d,%d,%d,%d,%s\n", c.c1, c.c2, c.c3, c.c4, c.c5)
 	t.addToBuffer(record)
 	return nil
+}
+
+func (t *table) addToBuffer(record string) {
+	t.buffer = append(t.buffer, record)
+	if len(t.buffer) == cap(t.buffer) {
+		t.Flush()
+	}
 }
