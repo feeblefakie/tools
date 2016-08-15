@@ -13,7 +13,7 @@ var (
 )
 
 const (
-	NumBlocks       = 1000
+	NumBlocks       = 1024
 	BaseCardinality = 10000000 // this should be dividable by NumBlocks
 )
 
@@ -190,6 +190,11 @@ func (t *table) makeBlocks(f func(int64, int) error) error {
 	for blockIndex, blockId := range t.config.BlockIds {
 		startKey := t.card / t.config.BlockTotal * blockId
 		endKey := t.card/t.config.BlockTotal*(blockId+1) - 1
+
+		// fraction will be stored in the last block
+		if blockId == NumBlocks-1 {
+			endKey = t.card - 1
+		}
 
 		for i := startKey; i <= endKey; i++ {
 			f(i, blockIndex)
