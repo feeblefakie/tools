@@ -13,8 +13,6 @@ import (
 	"./table"
 )
 
-const NumBlocks = 1024
-
 var (
 	sf          = flag.Int64("sf", 1, "scale factor")
 	c           = flag.Int64("c", 1, "the number of chunks (should be power of 2 and less than or equals to 1024)")
@@ -50,7 +48,7 @@ func main() {
 	blocksPerChunk := make([][]int64, *c)
 	var blockId int64
 	var chunkId int64
-	for blockId = 0; blockId < NumBlocks; blockId++ {
+	for blockId = 0; blockId < table.NumBlocks; blockId++ {
 		chunkId = blockId % *c
 		blocksPerChunk[chunkId] = append(blocksPerChunk[chunkId], blockId)
 	}
@@ -87,7 +85,7 @@ func main() {
 				Dir:        *dir,
 				Texts:      texts,
 				BlockIds:   blocksPerChunk[j],
-				BlockTotal: NumBlocks,
+				BlockTotal: table.NumBlocks,
 			}
 			go func(config *table.ChunkConfig) {
 				genChunk(config)

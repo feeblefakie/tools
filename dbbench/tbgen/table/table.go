@@ -12,6 +12,11 @@ var (
 	ErrInvalidTableType = errors.New("tokyo benchmark: invalid table type")
 )
 
+const (
+	NumBlocks       = 1000
+	BaseCardinality = 10000000 // this should be dividable by NumBlocks
+)
+
 type TableGenerator interface {
 	OpenFile() error
 	CloseFile() error
@@ -96,7 +101,7 @@ func New(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
 
 	switch tableType {
 	case T1:
-		card := config.Sf * 10000000 / config.Alpha
+		card := config.Sf * BaseCardinality / config.Alpha
 		for _, blockId := range config.BlockIds {
 			// distinct seed per block
 			r := rand.New(rand.NewSource(blockId))
@@ -114,7 +119,7 @@ func New(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
 		return &t1{t}, nil
 
 	case T2:
-		card := config.Sf * 10000000 / config.Alpha
+		card := config.Sf * BaseCardinality / config.Alpha
 		for _, blockId := range config.BlockIds {
 			r := rand.New(rand.NewSource(blockId))
 			ngArray := []NumberGenerator{
@@ -131,7 +136,7 @@ func New(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
 		return &t2{t}, nil
 
 	case T3:
-		card := config.Sf * 10000000 / (config.Alpha * config.Beta)
+		card := config.Sf * BaseCardinality / (config.Alpha * config.Beta)
 		for _, blockId := range config.BlockIds {
 			r := rand.New(rand.NewSource(blockId))
 			ngArray := []NumberGenerator{
