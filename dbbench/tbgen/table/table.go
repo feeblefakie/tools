@@ -103,8 +103,8 @@ func New(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
 	case T1:
 		card := config.Sf * BaseCardinality / config.Alpha
 		for _, blockId := range config.BlockIds {
-			// distinct seed per block
-			r := rand.New(rand.NewSource(blockId))
+			// distinct seed per block per table
+			r := rand.New(rand.NewSource(blockId<<2 + int64(tableType)))
 			ngArray := []NumberGenerator{
 				nil,
 				nil, // TODO for parete
@@ -121,7 +121,8 @@ func New(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
 	case T2:
 		card := config.Sf * BaseCardinality / config.Alpha
 		for _, blockId := range config.BlockIds {
-			r := rand.New(rand.NewSource(blockId))
+			// distinct seed per block per table
+			r := rand.New(rand.NewSource(blockId<<2 + int64(tableType)))
 			ngArray := []NumberGenerator{
 				nil,
 				&UniformRandom{r: r, min: 1, max: card / config.Beta},
@@ -138,7 +139,8 @@ func New(tableType TableType, config *ChunkConfig) (TableGenerator, error) {
 	case T3:
 		card := config.Sf * BaseCardinality / (config.Alpha * config.Beta)
 		for _, blockId := range config.BlockIds {
-			r := rand.New(rand.NewSource(blockId))
+			// distinct seed per block per table
+			r := rand.New(rand.NewSource(blockId<<2 + int64(tableType)))
 			ngArray := []NumberGenerator{
 				nil,
 				&UniformRandom{r: r, min: 1, max: card},
