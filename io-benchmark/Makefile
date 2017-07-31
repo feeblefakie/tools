@@ -1,4 +1,4 @@
-prog=sequential sequentialw random random_range random_aio random32 random_aio32 randomw interface seek seekw latency latencyw sim postmark interface-para interface-para-seq
+prog=sequential sequentialw sequentialw_fsync random random_range random_aio random32 random_aio32 randomw interface seek seekw latency latencyw sim postmark interface-para interface-para-seq
 #CPPFLAGS=-O2 -Wall -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 CPPFLAGS=-O2 -Wall -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 
@@ -11,6 +11,9 @@ sequential: sequential.cpp
 	g++ $(CPPFLAGS) $< -o $@
 
 sequentialw: sequentialw.cpp
+	g++ $(CPPFLAGS) $< -o $@
+
+sequentialw_fsync: sequentialw_fsync.cpp
 	g++ $(CPPFLAGS) $< -o $@
 
 random: random.cpp
